@@ -12,7 +12,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).send('Cloudinary name não configurado');
   }
 
-  const imageUrl = `https://res.cloudinary.com/${cloudName}/image/upload/${id}.png`;
+  const imageUrl = `https://res.cloudinary.com/${cloudName}/image/upload/${id}`;
   const pageUrl = `https://rank-my-diego.vercel.app/api/preview/${encodeURIComponent(id)}`;
 
   const html = `
