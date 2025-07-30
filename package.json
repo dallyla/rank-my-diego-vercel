@@ -1,0 +1,15 @@
+{
+  "name": "rank-my-diego-vercel",
+  "version": "1.0.0",
+  "description": "vercel backend for the app rank my diego",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@vercel/node": "^5.3.7"
+  }
+}
