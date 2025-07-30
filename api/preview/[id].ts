@@ -13,7 +13,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const imageUrl = `https://res.cloudinary.com/${cloudName}/image/upload/${id}.png`;
-  const pageUrl = `https://rank-my-diego-vercel.vercel.app/api/preview/${encodeURIComponent(id)}`;
+  const pageUrl = `https://rank-my-diego.vercel.app/api/preview/${encodeURIComponent(id)}`;
 
   const html = `
     <!DOCTYPE html>
