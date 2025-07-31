@@ -29,11 +29,10 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
       <meta property="og:type" content="website" />
       <meta name="twitter:card" content="summary_large_image" />
       <meta name="twitter:image" content="${imageUrl}" />
-    </head>    
-    <body style="margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh;">
+    </head>
+    <body  style="display: flex; justify-content: center; align-items: center;">
       <img src="${imageUrl}" alt="Ranking" style="max-width: 100%; border-radius: 12px;" />
     </body>
-    
     </html>
   `;
 
