@@ -29,11 +29,11 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
       <meta property="og:type" content="website" />
       <meta name="twitter:card" content="summary_large_image" />
       <meta name="twitter:image" content="${imageUrl}" />
-    </head>
-    <body>
-      <h1>Meu Ranking da Diego Martins</h1>
+    </head>    
+    <body style="margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh;">
       <img src="${imageUrl}" alt="Ranking" style="max-width: 100%; border-radius: 12px;" />
     </body>
+    
     </html>
   `;
 
