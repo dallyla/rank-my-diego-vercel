@@ -1,7 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 
 declare global {
-  // Cache na instância quente da função
   var __spotifyCache__: { data: any; lastUpdated: number } | undefined;
 }
 
@@ -16,15 +15,57 @@ async function getAccessToken(): Promise<string> {
         Buffer.from(
           `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
         ).toString('base64'),
-      'Content-Type': 'application/x-www-form-urlencoded'
+      'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: 'grant_type=client_credentials'
+    body: 'grant_type=client_credentials',
   });
 
   if (!resp.ok) throw new Error(`Erro ao obter token Spotify: ${resp.status}`);
 
   const json = await resp.json();
   return json.access_token;
+}
+
+async function fetchAllAlbums(artistId: string, headers: any) {
+  let albums: any[] = [];
+  let nextUrl = `https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album,single&market=BR&limit=50`;
+
+  while (nextUrl) {
+    const resp = await fetch(nextUrl, { headers });
+    if (!resp.ok) throw new Error(`Erro ao buscar álbuns: ${resp.status}`);
+    const json = await resp.json();
+
+    if (Array.isArray(json.items)) {
+      albums.push(...json.items);
+    }
+
+    nextUrl = json.next;
+  }
+
+  return albums;
+}
+
+async function fetchTracksByAlbum(albumId: string, headers: any) {
+  const resp = await fetch(`https://api.spotify.com/v1/albums/${albumId}/tracks`, { headers });
+  if (!resp.ok) throw new Error(`Erro ao buscar tracks do álbum ${albumId}: ${resp.status}`);
+  const json = await resp.json();
+  return json.items;
+}
+
+async function fetchTracksDetailsBatch(trackIds: string[], headers: any) {
+  const chunks: string[][] = [];
+  for (let i = 0; i < trackIds.length; i += 50) {
+    chunks.push(trackIds.slice(i, i + 50));
+  }
+
+  const detailedTracks: any[] = [];
+  for (const chunk of chunks) {
+    const resp = await fetch(`https://api.spotify.com/v1/tracks?ids=${chunk.join(',')}`, { headers });
+    if (!resp.ok) throw new Error(`Erro ao buscar detalhes das faixas: ${resp.status}`);
+    const json = await resp.json();
+    detailedTracks.push(...(json.tracks || []));
+  }
+  return detailedTracks;
 }
 
 async function fetchSpotifyFull(artistId: string) {
@@ -36,55 +77,38 @@ async function fetchSpotifyFull(artistId: string) {
   if (!artistResp.ok) throw new Error(`Erro ao buscar artista: ${artistResp.status}`);
   const artist = await artistResp.json();
 
-  // Buscar álbuns
-  const albumsResp = await fetch(
-    `https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album,single&market=BR&limit=50`,
-    { headers }
-  );
-  if (!albumsResp.ok) throw new Error(`Erro ao buscar álbuns: ${albumsResp.status}`);
-  const albumsJson = await albumsResp.json();
+  // Buscar todos os álbuns (paginação)
+  const albums = await fetchAllAlbums(artistId, headers);
 
-  const albums = Array.isArray(albumsJson.items) ? albumsJson.items : [];
-
-  // Para cada álbum, buscar as tracks e adicionar as imagens do álbum em cada track
-  const albumsWithTracks = await Promise.all(
-    albums.map(async (album: any) => {
-      const tracksResp = await fetch(`https://api.spotify.com/v1/albums/${album.id}/tracks`, { headers });
-      if (!tracksResp.ok) throw new Error(`Erro ao buscar tracks do álbum ${album.id}: ${tracksResp.status}`);
-      const tracksJson = await tracksResp.json();
-
-      const tracksWithAlbumImages = Array.isArray(tracksJson.items)
-        ? tracksJson.items.map((track: any) => ({
-            id: track.id,
-            name: track.name,
-            preview_url: track.preview_url,
-            duration_ms: track.duration_ms,
-            artists: track.artists,
-            albumImages: album.images,
-            album: {
-              id: album.id,
-              name: album.name,
-              release_date: album.release_date
-            }
-          }))
-        : [];
-
-      return {
-        ...album,
-        tracks: tracksWithAlbumImages
-      };
+  // Buscar tracks básicas de cada álbum
+  const albumsWithBasicTracks = await Promise.all(
+    albums.map(async album => {
+      const tracks = await fetchTracksByAlbum(album.id, headers);
+      return { ...album, tracks };
     })
   );
 
-  // Criar um array plano de todas as tracks de todos os álbuns com imagens
-  const allTracks = albumsWithTracks.flatMap(album => album.tracks);
+  // Juntar todos os track ids para buscar detalhes
+  const allTrackIds = albumsWithBasicTracks.flatMap(album => album.tracks.map((t: any) => t.id));
 
-  return { artist, albums: albumsWithTracks, tracks: allTracks };
+  // Buscar detalhes em lote das tracks
+  const detailedTracks = await fetchTracksDetailsBatch(allTrackIds, headers);
+
+  // Criar um mapa idTrack -> trackDetalhada para fácil lookup
+  const detailedTracksMap = new Map<string, any>();
+  detailedTracks.forEach(track => detailedTracksMap.set(track.id, track));
+
+  // Substituir as tracks básicas em albumsWithBasicTracks pelas detalhadas
+  const albumsWithDetailedTracks = albumsWithBasicTracks.map(album => ({
+    ...album,
+    tracks: album.tracks.map((t: any) => detailedTracksMap.get(t.id) || t),
+  }));
+
+  return { artist, albums: albumsWithDetailedTracks, tracks: detailedTracks };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // === CORS Headers ===
-  res.setHeader('Access-Control-Allow-Origin', '*'); // para produção, substitua '*' pelo domínio do seu frontend
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-cache-secret');
 
@@ -93,7 +117,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  // Verificação do segredo para segurança (passado via query ou header)
   const providedSecret = (req.headers['x-cache-secret'] as string) || (req.query?.secret as string);
   if (process.env.CRON_SECRET && providedSecret !== process.env.CRON_SECRET) {
     return res.status(401).json({ error: 'Unauthorized: segredo inválido' });
