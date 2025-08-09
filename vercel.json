@@ -1,0 +1,9 @@
+{
+    "functions": {
+      "api/cache-artist-tracks.ts": {
+        "runtime": "@vercel/node"
+      }
+    }
+
+}
+  
