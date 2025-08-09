@@ -44,17 +44,30 @@ async function fetchSpotifyFull(artistId: string) {
   if (!albumsResp.ok) throw new Error(`Erro ao buscar álbuns: ${albumsResp.status}`);
   const albumsJson = await albumsResp.json();
 
-  // Para cada álbum, buscar as tracks e adicionar imagens do álbum em cada track
+  const albums = Array.isArray(albumsJson.items) ? albumsJson.items : [];
+
+  // Para cada álbum, buscar as tracks e adicionar as imagens do álbum em cada track
   const albumsWithTracks = await Promise.all(
-    albumsJson.items.map(async (album: any) => {
+    albums.map(async (album: any) => {
       const tracksResp = await fetch(`https://api.spotify.com/v1/albums/${album.id}/tracks`, { headers });
       if (!tracksResp.ok) throw new Error(`Erro ao buscar tracks do álbum ${album.id}: ${tracksResp.status}`);
       const tracksJson = await tracksResp.json();
 
-      const tracksWithAlbumImages = tracksJson.items.map((track: any) => ({
-        ...track,
-        albumImages: album.images // adiciona as imagens do álbum aqui
-      }));
+      const tracksWithAlbumImages = Array.isArray(tracksJson.items)
+        ? tracksJson.items.map((track: any) => ({
+            id: track.id,
+            name: track.name,
+            preview_url: track.preview_url,
+            duration_ms: track.duration_ms,
+            artists: track.artists,
+            albumImages: album.images,
+            album: {
+              id: album.id,
+              name: album.name,
+              release_date: album.release_date
+            }
+          }))
+        : [];
 
       return {
         ...album,
@@ -63,12 +76,15 @@ async function fetchSpotifyFull(artistId: string) {
     })
   );
 
-  return { artist, albums: albumsWithTracks };
+  // Criar um array plano de todas as tracks de todos os álbuns com imagens
+  const allTracks = albumsWithTracks.flatMap(album => album.tracks);
+
+  return { artist, albums: albumsWithTracks, tracks: allTracks };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // === CORS Headers ===
-  res.setHeader('Access-Control-Allow-Origin', '*'); // Para produção, especifique o domínio exato do seu frontend
+  res.setHeader('Access-Control-Allow-Origin', '*'); // para produção, substitua '*' pelo domínio do seu frontend
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-cache-secret');
 
@@ -89,16 +105,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const now = Date.now();
 
-    // Cache na instância quente
     const globalCache = globalThis.__spotifyCache__;
     if (globalCache && now - globalCache.lastUpdated < CACHE_TTL_MS) {
       return res.status(200).json({ lastUpdated: globalCache.lastUpdated, data: globalCache.data, fromCache: true });
     }
 
-    // Busca dados frescos do Spotify
     const data = await fetchSpotifyFull(ARTIST_ID);
 
-    // Armazena no cache global
     globalThis.__spotifyCache__ = { data, lastUpdated: now };
 
     return res.status(200).json({ lastUpdated: now, data, fromCache: false });
