@@ -43,43 +43,32 @@ async function fetchSpotifyFull(artistId: string) {
   );
   if (!albumsResp.ok) throw new Error(`Erro ao buscar álbuns: ${albumsResp.status}`);
   const albumsJson = await albumsResp.json();
-  const albumIds: string[] = (albumsJson.items || []).map((a: any) => a.id);
 
-  // Dividir álbuns em lotes de 20
-  const batched: string[][] = [];
-  for (let i = 0; i < albumIds.length; i += 20) batched.push(albumIds.slice(i, i + 20));
+  // Para cada álbum, buscar as tracks e adicionar imagens do álbum em cada track
+  const albumsWithTracks = await Promise.all(
+    albumsJson.items.map(async (album: any) => {
+      const tracksResp = await fetch(`https://api.spotify.com/v1/albums/${album.id}/tracks`, { headers });
+      if (!tracksResp.ok) throw new Error(`Erro ao buscar tracks do álbum ${album.id}: ${tracksResp.status}`);
+      const tracksJson = await tracksResp.json();
 
-  const albumsDetailed: any[] = [];
-  for (const group of batched) {
-    const groupResp = await fetch(`https://api.spotify.com/v1/albums?ids=${group.join(',')}`, { headers });
-    if (!groupResp.ok) throw new Error(`Erro ao buscar detalhes de álbuns: ${groupResp.status}`);
-    const groupJson = await groupResp.json();
-    albumsDetailed.push(...(groupJson.albums || []));
-  }
+      const tracksWithAlbumImages = tracksJson.items.map((track: any) => ({
+        ...track,
+        albumImages: album.images // adiciona as imagens do álbum aqui
+      }));
 
-  // Extrair faixas
-  const allTracks = albumsDetailed.flatMap((album: any) =>
-    album.tracks.items.map((t: any) => ({
-      id: t.id,
-      name: t.name,
-      preview_url: t.preview_url,
-      duration_ms: t.duration_ms,
-      album: {
-        id: album.id,
-        name: album.name,
-        images: album.images,
-        release_date: album.release_date
-      },
-      artists: t.artists
-    }))
+      return {
+        ...album,
+        tracks: tracksWithAlbumImages
+      };
+    })
   );
 
-  return { artist, albums: albumsJson.items, albumsDetailed, tracks: allTracks };
+  return { artist, albums: albumsWithTracks };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // === CORS Headers ===
-  res.setHeader('Access-Control-Allow-Origin', '*'); // para produção, substitua '*' pelo domínio do seu frontend
+  res.setHeader('Access-Control-Allow-Origin', '*'); // Para produção, especifique o domínio exato do seu frontend
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-cache-secret');
 
@@ -100,13 +89,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const now = Date.now();
 
+    // Cache na instância quente
     const globalCache = globalThis.__spotifyCache__;
     if (globalCache && now - globalCache.lastUpdated < CACHE_TTL_MS) {
       return res.status(200).json({ lastUpdated: globalCache.lastUpdated, data: globalCache.data, fromCache: true });
     }
 
+    // Busca dados frescos do Spotify
     const data = await fetchSpotifyFull(ARTIST_ID);
 
+    // Armazena no cache global
     globalThis.__spotifyCache__ = { data, lastUpdated: now };
 
     return res.status(200).json({ lastUpdated: now, data, fromCache: false });
