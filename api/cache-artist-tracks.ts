@@ -129,10 +129,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const now = Date.now();
 
     const globalCache = globalThis.__spotifyCache__;
-    if (globalCache && now - globalCache.lastUpdated < CACHE_TTL_MS) {
+
+    // Parâmetro para ignorar cache
+    const ignoreCache = req.query.nocache === 'true';
+
+    if (!ignoreCache && globalCache && now - globalCache.lastUpdated < CACHE_TTL_MS) {
       return res.status(200).json({ lastUpdated: globalCache.lastUpdated, data: globalCache.data, fromCache: true });
     }
 
+    // Busca dados frescos e atualiza cache
     const data = await fetchSpotifyFull(ARTIST_ID);
 
     globalThis.__spotifyCache__ = { data, lastUpdated: now };
