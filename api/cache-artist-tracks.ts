@@ -78,6 +78,16 @@ async function fetchSpotifyFull(artistId: string) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // === CORS Headers ===
+  res.setHeader('Access-Control-Allow-Origin', '*'); // para produção, substitua '*' pelo domínio do seu frontend
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-cache-secret');
+
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
   // Verificação do segredo para segurança (passado via query ou header)
   const providedSecret = (req.headers['x-cache-secret'] as string) || (req.query?.secret as string);
   if (process.env.CRON_SECRET && providedSecret !== process.env.CRON_SECRET) {
@@ -90,13 +100,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const now = Date.now();
 
-    // Usa cache em globalThis para instâncias quentes
     const globalCache = globalThis.__spotifyCache__;
     if (globalCache && now - globalCache.lastUpdated < CACHE_TTL_MS) {
       return res.status(200).json({ lastUpdated: globalCache.lastUpdated, data: globalCache.data, fromCache: true });
     }
 
-    // Busca dados frescos do Spotify
     const data = await fetchSpotifyFull(ARTIST_ID);
 
     globalThis.__spotifyCache__ = { data, lastUpdated: now };
