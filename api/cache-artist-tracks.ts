@@ -1,4 +1,4 @@
-import { VercelRequest, VercelResponse } from '@vercel/node';
+import { VercelRequest, VercelResponse } from '@vercel/node'; 
 
 declare global {
   var __spotifyCache__: { data: any; lastUpdated: number } | undefined;
