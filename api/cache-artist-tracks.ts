@@ -49,7 +49,7 @@ async function fetchTracksByAlbum(albumId: string, headers: any) {
   const resp = await fetch(`https://api.spotify.com/v1/albums/${albumId}/tracks`, { headers });
   if (!resp.ok) throw new Error(`Erro ao buscar tracks do álbum ${albumId}: ${resp.status}`);
   const json = await resp.json();
-  return json.items;
+  return json.items || [];
 }
 
 async function fetchTracksDetailsBatch(trackIds: string[], headers: any) {
@@ -80,26 +80,26 @@ async function fetchSpotifyFull(artistId: string) {
   // Buscar todos os álbuns (paginação)
   const albums = await fetchAllAlbums(artistId, headers);
 
-  // Buscar tracks básicas de cada álbum
-  const albumsWithBasicTracks = await Promise.all(
-    albums.map(async album => {
+  // Buscar faixas explícitas para cada álbum
+  const albumsWithTracks = await Promise.all(
+    albums.map(async (album) => {
       const tracks = await fetchTracksByAlbum(album.id, headers);
       return { ...album, tracks };
     })
   );
 
-  // Juntar todos os track ids para buscar detalhes
-  const allTrackIds = albumsWithBasicTracks.flatMap(album => album.tracks.map((t: any) => t.id));
+  // Pegar todos os IDs das faixas para buscar detalhes em lote
+  const allTrackIds = albumsWithTracks.flatMap(album => album.tracks.map((t: any) => t.id));
 
-  // Buscar detalhes em lote das tracks
+  // Buscar detalhes completos das faixas
   const detailedTracks = await fetchTracksDetailsBatch(allTrackIds, headers);
 
-  // Criar um mapa idTrack -> trackDetalhada para fácil lookup
+  // Criar mapa para fácil lookup das faixas detalhadas
   const detailedTracksMap = new Map<string, any>();
   detailedTracks.forEach(track => detailedTracksMap.set(track.id, track));
 
-  // Substituir as tracks básicas em albumsWithBasicTracks pelas detalhadas
-  const albumsWithDetailedTracks = albumsWithBasicTracks.map(album => ({
+  // Substituir faixas básicas pelas detalhadas nos álbuns
+  const albumsWithDetailedTracks = albumsWithTracks.map(album => ({
     ...album,
     tracks: album.tracks.map((t: any) => detailedTracksMap.get(t.id) || t),
   }));
